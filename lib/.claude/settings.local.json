@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/berke/ilk_uygulama/**)",
+      "Bash(flutter analyze:*)",
+      "Bash(wc -l \"/c/Users/berke/ilk_uygulama/lib/screens\"/*.dart \"/c/Users/berke/ilk_uygulama/lib/widgets\"/*.dart)",
+      "Bash(flutter doctor:*)",
+      "Bash(flutter build:*)",
+      "Bash(flutter devices:*)",
+      "Bash(wmic logicaldisk:*)",
+      "Bash(flutter pub:*)"
+    ]
+  }
+}
