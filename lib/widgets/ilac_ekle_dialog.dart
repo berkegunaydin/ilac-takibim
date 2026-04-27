@@ -5,7 +5,7 @@ import '../data/ilac_veritabani.dart';
 class IlacEkleDialog extends StatefulWidget {
   final Ilac? duzenlenecekIlac;
   final Function(String isim, String doz, String saat, String emoji,
-      List<int> gunler, int stok, int stokUyariEsigi) onKaydet;
+      List<int> gunler, int stok, int stokUyariEsigi, int bildirimOnce) onKaydet;
 
   const IlacEkleDialog({
     super.key,
@@ -24,6 +24,7 @@ class _IlacEkleDialogState extends State<IlacEkleDialog> {
   late String secilenMiktar;
   late String secilenGuc;
   late int secilenStok;
+  late String secilenBildirimZamani;
   TimeOfDay? secilenSaat;
   late String saatText;
   late List<int> secilenGunler;
@@ -35,6 +36,10 @@ class _IlacEkleDialogState extends State<IlacEkleDialog> {
     '100mg', '200mg', '250mg', '400mg', '500mg', '750mg', '1000mg'
   ];
   static const _stoklar = [7, 10, 14, 21, 28, 30, 60, 90];
+  static const _bildirimZamanlari = {
+    'Zamanında': 0, '5 dk önce': 5, '15 dk önce': 15,
+    '30 dk önce': 30, '1 sa önce': 60,
+  };
 
   @override
   void initState() {
@@ -62,11 +67,16 @@ class _IlacEkleDialogState extends State<IlacEkleDialog> {
         hour: int.parse(parcalar[0]),
         minute: int.parse(parcalar[1]),
       );
+      secilenBildirimZamani = _bildirimZamanlari.entries
+          .firstWhere((e) => e.value == (ilac.bildirimOnce),
+              orElse: () => _bildirimZamanlari.entries.first)
+          .key;
     } else {
       secilenBirim = 'Tablet';
       secilenMiktar = '1';
       secilenGuc = '500mg';
       secilenStok = 30;
+      secilenBildirimZamani = 'Zamanında';
     }
 
     isimController.addListener(_oneriGuncelle);
@@ -287,6 +297,13 @@ class _IlacEkleDialogState extends State<IlacEkleDialog> {
                 ),
               ),
             ),
+            const SizedBox(height: 12),
+            _secimSatiri(
+              'Bildirim zamanı',
+              _bildirimZamanlari.keys.toList(),
+              secilenBildirimZamani,
+              (v) => secilenBildirimZamani = v,
+            ),
             const SizedBox(height: 10),
             const Text('Günler',
                 style: TextStyle(fontSize: 13, color: Colors.grey)),
@@ -358,6 +375,7 @@ class _IlacEkleDialogState extends State<IlacEkleDialog> {
                       secilenGunler,
                       secilenStok,
                       stokUyariEsigi,
+                      _bildirimZamanlari[secilenBildirimZamani] ?? 0,
                     );
                     Navigator.pop(context);
                   }

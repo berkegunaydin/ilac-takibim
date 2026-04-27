@@ -6,7 +6,7 @@ import '../widgets/ilac_ekle_dialog.dart';
 class TumIlaclarEkrani extends StatelessWidget {
   final List<Ilac> ilaclar;
   final Function(Ilac) onSil;
-  final Function(Ilac, String, String, String, String, List<int>, int, int) onDuzenle;
+  final Function(Ilac, String, String, String, String, List<int>, int, int, int) onDuzenle;
 
   const TumIlaclarEkrani({
     super.key,
@@ -43,8 +43,8 @@ class TumIlaclarEkrani extends StatelessWidget {
                         ),
                         builder: (context) => IlacEkleDialog(
                           duzenlenecekIlac: ilac,
-                          onKaydet: (isim, doz, saat, emoji, gunler, stok, stokUyariEsigi) =>
-                              onDuzenle(ilac, isim, doz, saat, emoji, gunler, stok, stokUyariEsigi),
+                          onKaydet: (isim, doz, saat, emoji, gunler, stok, stokUyariEsigi, bildirimOnce) =>
+                              onDuzenle(ilac, isim, doz, saat, emoji, gunler, stok, stokUyariEsigi, bildirimOnce),
                         ),
                       );
                     },

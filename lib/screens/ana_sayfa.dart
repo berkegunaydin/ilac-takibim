@@ -42,7 +42,7 @@ class _AnaSayfaState extends State<AnaSayfa> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _izinKontrol(yenidenZamanla: true);
+      _izinKontrol();
     }
   }
 
@@ -55,7 +55,7 @@ class _AnaSayfaState extends State<AnaSayfa> with WidgetsBindingObserver {
     _izinKontrol();
   }
 
-  Future<void> _izinKontrol({bool yenidenZamanla = false}) async {
+  Future<void> _izinKontrol() async {
     final alarmIzni = await BildirimServisi.alarmIzniVarMi();
     if (!mounted) return;
 
@@ -66,7 +66,7 @@ class _AnaSayfaState extends State<AnaSayfa> with WidgetsBindingObserver {
     }
 
     // İzin yeni verildi → bildirimleri yenile
-    if (!_alarmIzniVerildi || yenidenZamanla) {
+    if (!_alarmIzniVerildi) {
       _alarmIzniVerildi = true;
       final tumIlaclar = profiller.expand((p) => p.ilaclar).toList();
       await BildirimServisi.tumBildirimleriYenile(tumIlaclar);
@@ -122,11 +122,11 @@ class _AnaSayfaState extends State<AnaSayfa> with WidgetsBindingObserver {
     await KayitServisi.profilleriKaydet(profiller);
   }
 
-  void _ilacEkle(String isim, String doz, String saat, String emoji, List<int> gunler, int stok, int stokUyariEsigi) {
-    final yeniIlac = Ilac(isim: isim, doz: doz, saat: saat, emoji: emoji, gunler: gunler, stok: stok, stokUyariEsigi: stokUyariEsigi);
+  Future<void> _ilacEkle(String isim, String doz, String saat, String emoji, List<int> gunler, int stok, int stokUyariEsigi, int bildirimOnce) async {
+    final yeniIlac = Ilac(isim: isim, doz: doz, saat: saat, emoji: emoji, gunler: gunler, stok: stok, stokUyariEsigi: stokUyariEsigi, bildirimOnce: bildirimOnce);
     setState(() => ilaclar.add(yeniIlac));
-    _kaydet();
-    BildirimServisi.bildirimAyarla(yeniIlac);
+    await _kaydet();
+    await BildirimServisi.bildirimAyarla(yeniIlac);
   }
 
   void _ilacSil(Ilac ilac) {
@@ -135,12 +135,13 @@ class _AnaSayfaState extends State<AnaSayfa> with WidgetsBindingObserver {
     BildirimServisi.iptalEt(ilac);
   }
 
-  void _ilacDuzenle(Ilac ilac, String isim, String doz, String saat, String emoji, List<int> gunler, int stok, int stokUyariEsigi) {
+  void _ilacDuzenle(Ilac ilac, String isim, String doz, String saat, String emoji, List<int> gunler, int stok, int stokUyariEsigi, int bildirimOnce) {
     final index = ilaclar.indexOf(ilac);
     final yeniIlac = Ilac(
-      bildirimId: ilac.bildirimId, // Aynı ID'yi koru → eski bildirimler iptal edilir
+      bildirimId: ilac.bildirimId,
       isim: isim, doz: doz, saat: saat, emoji: emoji,
       gunler: gunler, eklemeTarihi: ilac.eklemeTarihi,
+      bildirimOnce: bildirimOnce,
       stok: stok, stokUyariEsigi: stokUyariEsigi, gecmis: ilac.gecmis,
     );
     setState(() => ilaclar[index] = yeniIlac);
@@ -159,9 +160,13 @@ class _AnaSayfaState extends State<AnaSayfa> with WidgetsBindingObserver {
         if (ilac.stok == ilac.stokUyariEsigi) {
           BildirimServisi.stokBildirimi(ilac);
         }
+      } else if (!ilac.alindi && ilac.stok >= 0) {
+        ilac.stok++;
       }
     });
     _kaydet();
+    // Takip alarmını güncelle: alındıysa iptal et, geri alındıysa yeniden planla
+    BildirimServisi.bildirimAyarla(ilac);
   }
 
   void _profilEkle() {
@@ -368,21 +373,77 @@ class _AnaSayfaState extends State<AnaSayfa> with WidgetsBindingObserver {
     final zamanlanmis = await bildirimPlugin.pendingNotificationRequests();
     if (!mounted) return;
 
+    // Her ilacın en yakın bildirim zamanını hesapla
+    final sirali = ilaclar
+        .where((ilac) => ilac.gunler.isNotEmpty)
+        .map((ilac) {
+          final zamanlari = BildirimServisi.bildirimZamanlariHesapla(ilac);
+          return (ilac: ilac, sonraki: zamanlari.isNotEmpty ? zamanlari.first : null);
+        })
+        .where((e) => e.sonraki != null)
+        .toList()
+      ..sort((a, b) => a.sonraki!.compareTo(b.sonraki!));
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Bildirim Tanılama'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _durumSatiri('Bildirim & alarm izni',
-                bildirimIzni ? '✅ Verilmiş' : '❌ Verilmemiş'),
-            _durumSatiri('Pil optimizasyonu',
-                pilOptimize ? '⚠️ Aktif (engel)' : '✅ Devre dışı'),
-            _durumSatiri('Zamanlanmış bildirim',
-                '${zamanlanmis.length} adet'),
-          ],
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _durumSatiri('Bildirim & alarm izni',
+                    bildirimIzni ? '✅ Verilmiş' : '❌ Verilmemiş'),
+                _durumSatiri('Pil optimizasyonu',
+                    pilOptimize ? '⚠️ Aktif (engel)' : '✅ Devre dışı'),
+                _durumSatiri('Zamanlanmış bildirim',
+                    '${zamanlanmis.length} adet'),
+                if (BildirimServisi.sonHata != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      '❌ Hata: ${BildirimServisi.sonHata}',
+                      style: const TextStyle(fontSize: 11, color: Colors.red),
+                    ),
+                  ),
+                if (sirali.isNotEmpty) ...[
+                  const Divider(height: 20),
+                  const Text('Yakında gelecek bildirimler:',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 6),
+                  ...sirali.take(5).map((e) {
+                    final dt = e.sonraki!;
+                    final now = DateTime.now();
+                    final fark = dt.difference(now);
+                    final farkStr = fark.inDays > 0
+                        ? '${fark.inDays}g ${fark.inHours % 24}sa'
+                        : fark.inHours > 0
+                            ? '${fark.inHours}sa ${fark.inMinutes % 60}dk'
+                            : '${fark.inMinutes}dk ${fark.inSeconds % 60}sn';
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Row(
+                        children: [
+                          Text(e.ilac.emoji,
+                              style: const TextStyle(fontSize: 14)),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              '${e.ilac.isim} — ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} ($farkStr sonra)',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+              ],
+            ),
+          ),
         ),
         actions: [
           TextButton(
@@ -392,17 +453,18 @@ class _AnaSayfaState extends State<AnaSayfa> with WidgetsBindingObserver {
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(ctx);
-              await BildirimServisi.testBildirimiGonder();
+              final tumIlaclar = profiller.expand((p) => p.ilaclar).toList();
+              await BildirimServisi.tumBildirimleriYenile(tumIlaclar);
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text('Test bildirimi gönderildi — 10 sn bekle'),
-                  duration: Duration(seconds: 3),
+                  content: Text('Tüm bildirimler yenilendi'),
+                  duration: Duration(seconds: 2),
                 ));
               }
             },
             style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF1D9E75)),
-            child: const Text('Test Gönder',
+            child: const Text('Yenile',
                 style: TextStyle(color: Colors.white)),
           ),
         ],

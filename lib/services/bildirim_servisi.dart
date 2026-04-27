@@ -8,12 +8,12 @@ final FlutterLocalNotificationsPlugin bildirimPlugin =
     FlutterLocalNotificationsPlugin();
 
 class BildirimServisi {
-  // Bir ilaca ayrılan bildirim ID aralığı: [bildirimId, bildirimId + _gunSayisi)
-  // Son slot (_gunSayisi) stok uyarısı için ayrılmıştır.
-  // 7 gün × 4 hafta = 28 slot + 1 stok slotu = 29 toplam
-  static const int _gunSayisi = 28;
+  // Slot düzeni: 0-6 ana alarm, 7-13 takip alarmı, 14 stok uyarısı
+  static const int _gunSayisi = 14;
+  static String? sonHata;
 
   static const _bataryaKanali = MethodChannel('com.app.ilactakibim/battery');
+  static const _alarmKanali  = MethodChannel('com.app.ilactakibim/alarm');
 
   static const _ilacKanali = AndroidNotificationDetails(
     'ilac_kanal',
@@ -48,7 +48,9 @@ class BildirimServisi {
     await androidPlugin.requestExactAlarmsPermission();
   }
 
-  static Future<void> bildirimAyarla(Ilac ilac) async {
+  /// Bildirimleri zamanlar; zamanlanabilen ana bildirim sayısını döner.
+  static Future<int> bildirimAyarla(Ilac ilac) async {
+    int zamanlanan = 0;
     try {
       await _iptalEt(ilac);
 
@@ -56,39 +58,59 @@ class BildirimServisi {
       final saatInt = int.parse(parcalar[0]);
       final dakikaInt = int.parse(parcalar[1]);
       final now = tz.TZDateTime.now(tz.local);
+      final bugun = DateTime.now().toIso8601String().substring(0, 10);
 
-      // matchDateTimeComponents yerine her gün için önümüzdeki 4 haftayı
-      // tek tek zamanla — alarmClock modu ile %100 güvenilir.
       int slot = 0;
-      for (final gun in ilac.gunler) {
-        var ilkTekrar = tz.TZDateTime(
-            tz.local, now.year, now.month, now.day, saatInt, dakikaInt);
-        while (ilkTekrar.weekday != gun || !ilkTekrar.isAfter(now)) {
-          ilkTekrar = ilkTekrar.add(const Duration(days: 1));
+      for (int i = 0; i < 7; i++) {
+        final hedef = tz.TZDateTime(
+            tz.local, now.year, now.month, now.day, saatInt, dakikaInt)
+            .add(Duration(days: i));
+        if (!ilac.gunler.contains(hedef.weekday)) continue;
+
+        // Ana alarm — bildirimOnce dakika önce
+        final anaTetik = hedef.subtract(Duration(minutes: ilac.bildirimOnce));
+        if (anaTetik.isAfter(now)) {
+          final baslik = ilac.bildirimOnce == 0
+              ? '💊 İlaç Zamanı!'
+              : '💊 ${ilac.bildirimOnce} dakika kaldı!';
+          await _alarmKanali.invokeMethod('schedule', {
+            'id':        ilac.bildirimId + slot,
+            'triggerMs': anaTetik.millisecondsSinceEpoch,
+            'title':     baslik,
+            'body':      '${ilac.isim} alma vakti — ${ilac.doz}',
+          });
+          zamanlanan++;
         }
-        for (int hafta = 0; hafta < 4; hafta++) {
-          await bildirimPlugin.zonedSchedule(
-            ilac.bildirimId + slot,
-            '💊 İlaç Zamanı!',
-            '${ilac.isim} alma vakti geldi — ${ilac.doz}',
-            ilkTekrar.add(Duration(days: hafta * 7)),
-            const NotificationDetails(android: _ilacKanali),
-            androidScheduleMode: AndroidScheduleMode.alarmClock,
-            uiLocalNotificationDateInterpretation:
-                UILocalNotificationDateInterpretation.absoluteTime,
-          );
-          slot++;
+
+        // Takip alarmı — 1 saat sonra, bugün alınmadıysa
+        final takipTetik = hedef.add(const Duration(hours: 1));
+        if (takipTetik.isAfter(now)) {
+          final hedefTarih =
+              '${hedef.year}-${hedef.month.toString().padLeft(2, '0')}-${hedef.day.toString().padLeft(2, '0')}';
+          final bugunAlindi = hedefTarih == bugun && ilac.sonAlinmaTarihi == bugun;
+          if (!bugunAlindi) {
+            await _alarmKanali.invokeMethod('schedule', {
+              'id':        ilac.bildirimId + 7 + slot,
+              'triggerMs': takipTetik.millisecondsSinceEpoch,
+              'title':     '⏰ Hatırlatma!',
+              'body':      '${ilac.isim} almayı unutmayın — ${ilac.doz}',
+            });
+          }
         }
+
+        slot++;
       }
     } catch (e) {
+      sonHata = 'bildirimAyarla: $e';
       debugPrint('BildirimServisi.bildirimAyarla hatası: $e');
     }
+    return zamanlanan;
   }
 
   static Future<void> tumBildirimleriYenile(List<Ilac> ilaclar) async {
     await bildirimPlugin.cancelAll();
     for (final ilac in ilaclar) {
-      await bildirimAyarla(ilac);
+      await bildirimAyarla(ilac); // dönüş değeri burada kullanılmıyor
     }
   }
 
@@ -143,9 +165,8 @@ class BildirimServisi {
     } catch (_) {}
   }
 
-  /// Anında bir test bildirimi + 10 sn sonrasına zamanlanmış bir test bildirimi gönderir.
-  static Future<void> testBildirimiGonder() async {
-    // 1) Anında bildirim — kanal/izin çalışıyor mu?
+  /// Anında bir test bildirimi + [saniye] sn sonrasına zamanlanmış test bildirimi gönderir.
+  static Future<void> testBildirimiGonder({int saniye = 10}) async {
     await bildirimPlugin.show(
       999999,
       '🔔 Test (Anında)',
@@ -153,14 +174,12 @@ class BildirimServisi {
       const NotificationDetails(android: _stokKanali),
     );
 
-    // 2) 10 sn sonrasına zamanlanmış — zonedSchedule çalışıyor mu?
-    final zamani =
-        tz.TZDateTime.now(tz.local).add(const Duration(seconds: 10));
+    final zamani = tz.TZDateTime.now(tz.local).add(Duration(seconds: saniye));
     try {
       await bildirimPlugin.zonedSchedule(
         999998,
-        '⏰ Test (10 sn)',
-        'Bu bildirim 10 saniye sonraya zamanlanmıştı.',
+        '⏰ Test ($saniye sn)',
+        'Bu bildirim $saniye saniye sonraya zamanlanmıştı.',
         zamani,
         const NotificationDetails(android: _ilacKanali),
         androidScheduleMode: AndroidScheduleMode.alarmClock,
@@ -168,12 +187,34 @@ class BildirimServisi {
             UILocalNotificationDateInterpretation.absoluteTime,
       );
     } catch (e) {
+      sonHata = 'testBildirimiGonder: $e';
       debugPrint('testBildirimiGonder zamanlama hatası: $e');
     }
   }
 
+  /// İlacın önümüzdeki 7 günlük bildirim zamanlarını hesaplar (gerçekten zamanlamaz).
+  static List<tz.TZDateTime> bildirimZamanlariHesapla(Ilac ilac) {
+    final parcalar = ilac.saat.split(':');
+    final saatInt = int.parse(parcalar[0]);
+    final dakikaInt = int.parse(parcalar[1]);
+    final now = tz.TZDateTime.now(tz.local);
+    final zamanlari = <tz.TZDateTime>[];
+    for (int i = 0; i < 7; i++) {
+      final hedef = tz.TZDateTime(
+          tz.local, now.year, now.month, now.day, saatInt, dakikaInt)
+          .add(Duration(days: i));
+      if (!hedef.isAfter(now)) continue;
+      if (!ilac.gunler.contains(hedef.weekday)) continue;
+      zamanlari.add(now.add(hedef.difference(now)));
+    }
+    return zamanlari;
+  }
+
   static Future<void> _iptalEt(Ilac ilac) async {
     for (int i = 0; i <= _gunSayisi; i++) {
+      try {
+        await _alarmKanali.invokeMethod('cancel', {'id': ilac.bildirimId + i});
+      } catch (_) {}
       await bildirimPlugin.cancel(ilac.bildirimId + i);
     }
   }

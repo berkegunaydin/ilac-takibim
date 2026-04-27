@@ -42,6 +42,12 @@
             </intent-filter>
         </receiver>
 
+        <!-- İlaç alarm alıcısı — flutter_local_notifications'tan bağımsız -->
+        <receiver
+            android:name=".AlarmReceiver"
+            android:exported="false"/>
+
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2"/>
