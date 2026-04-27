@@ -25,7 +25,7 @@ class BugunEkrani extends StatelessWidget {
     final tamamlanma = bugunIlaclar.isEmpty ? 0.0 : alinanSayisi / bugunIlaclar.length;
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
       children: [
         Container(
           padding: const EdgeInsets.all(16),

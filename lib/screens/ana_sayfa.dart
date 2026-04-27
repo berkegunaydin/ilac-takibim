@@ -499,17 +499,16 @@ class _AnaSayfaState extends State<AnaSayfa> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     if (profiller.isEmpty) return const Scaffold(body: Center(child: CircularProgressIndicator()));
 
+    final navBarYuksekligi = MediaQuery.of(context).viewPadding.bottom;
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
-      body: SafeArea(
-        top: false, // header kendi top padding'ini (56) yönetiyor
-        child: Column(
-          children: [
-            _header(),
-            _sekmeler(),
-            Expanded(child: _ekran()),
-          ],
-        ),
+      body: Column(
+        children: [
+          _header(),
+          _sekmeler(),
+          Expanded(child: _ekran()),
+          SizedBox(height: navBarYuksekligi), // navigation bar alanını boşalt
+        ],
       ),
       floatingActionButton: _secilenSekme == 0 || _secilenSekme == 1
           ? FloatingActionButton(
