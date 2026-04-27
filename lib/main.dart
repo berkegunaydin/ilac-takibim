@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'services/bildirim_servisi.dart';
+import 'services/reklam_servisi.dart';
 import 'screens/ana_sayfa.dart';
 
 Future<void> main() async {
@@ -17,6 +18,7 @@ Future<void> main() async {
   tz.setLocalLocation(tz.getLocation('Europe/Istanbul'));
   await BildirimServisi.initialize();
   await BildirimServisi.requestIzinler();
+  await ReklamServisi.initialize();
   runApp(const MyApp());
 }
 

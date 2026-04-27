@@ -3,6 +3,7 @@ import '../models/ilac.dart';
 import '../models/profil.dart';
 import '../services/kayit_servisi.dart';
 import '../services/bildirim_servisi.dart';
+import '../services/reklam_servisi.dart';
 import '../widgets/ilac_ekle_dialog.dart';
 import 'bugun_ekrani.dart';
 import 'tum_ilaclar_ekrani.dart';
@@ -127,6 +128,7 @@ class _AnaSayfaState extends State<AnaSayfa> with WidgetsBindingObserver {
     setState(() => ilaclar.add(yeniIlac));
     await _kaydet();
     await BildirimServisi.bildirimAyarla(yeniIlac);
+    ReklamServisi.ilacEklendi();
   }
 
   void _ilacSil(Ilac ilac) {
