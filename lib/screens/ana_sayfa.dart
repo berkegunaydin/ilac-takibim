@@ -372,7 +372,6 @@ class _AnaSayfaState extends State<AnaSayfa> with WidgetsBindingObserver {
   Future<void> _tanilamaDialogGoster() async {
     final bildirimIzni = await BildirimServisi.alarmIzniVarMi();
     final pilOptimize = await BildirimServisi.pilOptimizasyonuAktifMi();
-    final zamanlanmis = await bildirimPlugin.pendingNotificationRequests();
     if (!mounted) return;
 
     // Her ilacın en yakın bildirim zamanını hesapla
@@ -401,8 +400,6 @@ class _AnaSayfaState extends State<AnaSayfa> with WidgetsBindingObserver {
                     bildirimIzni ? '✅ Verilmiş' : '❌ Verilmemiş'),
                 _durumSatiri('Pil optimizasyonu',
                     pilOptimize ? '⚠️ Aktif (engel)' : '✅ Devre dışı'),
-                _durumSatiri('Zamanlanmış bildirim',
-                    '${zamanlanmis.length} adet'),
                 if (BildirimServisi.sonHata != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
